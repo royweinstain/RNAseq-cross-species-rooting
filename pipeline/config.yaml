@@ -1,0 +1,47 @@
+pipeline:
+  run_name: "argan_poplar_v1"
+  # Standard OrthoFinder results dir (used when running all species together on HPC)
+  # Set to null if using orthofinder_custom_file instead
+  orthofinder_results: null
+  # Custom OrthoFinder TSV (3 columns: Orthogroup / poplar_genes / argan_genes)
+  # Direct pairwise poplar-argan OrthoFinder run — links both expression species.
+  orthofinder_custom_file: "orthogroups/Orthogroups.csv"
+  output_dir: "output"
+  min_species_for_conservation: 2      # Min species an OG must appear in
+  conservation_threshold: 0.80         # Fraction of species that must agree on direction
+  padj_threshold: 0.05                 # Significance cutoff for DE genes
+  log2fc_threshold: 1.0                # Minimum |log2FC| for DE genes
+
+species:
+  - name: "argan"
+    display_name: "Argan (Argania spinosa)"
+    expression_file: "../20230306 argan RNAseq full.xlsx"
+    expression_sheet: "fpkm"          # Excel sheet name
+    header_row: 1                     # Row number (1-based) of the column headers
+    gene_id_column: "ID"
+    gene_id_prefixes: ["XLOC_"]       # Used to match genes in OrthoFinder file
+    orthofinder_column: "argan_genes" # Column name in orthofinder_custom_file
+    data_format: "fpkm"               # Confirmed: FPKM values in the 'fpkm' sheet
+    samples:
+      easy: ["YM3-T0-1", "YM3-T0-2", "YM3-T0-3"]   # YM3 = easy-to-root
+      hard: ["196-T0-1", "196-T0-2", "196-T0-3"]    # 196  = hard-to-root
+    de_output: "data/argan/de_results.csv"
+
+  - name: "poplar"
+    display_name: "Poplar (Populus trichocarpa)"
+    expression_file: "../20230807 poplar.xlsx"
+    expression_sheet: "Sheet 1 Raw data"
+    header_row: 2                     # Row 1 is a description line; headers are on row 2
+    gene_id_column: "Genes"
+    gene_id_prefixes: ["Potri."]
+    orthofinder_column: "poplar_genes"  # placeholder — OrthoFinder file not yet available
+    data_format: "log2fpkm"           # Values range 0–14.5: confirmed log2-transformed FPKM
+    samples:
+      easy: ["OP42-1 (T0)", "OP42-2 (T0)", "OP42-3 (T0)"]      # OP42 = easy-to-root
+      hard: ["T89-1 (T0)", "T89-2(T0)", "T89-3(T0)"]           # T89  = hard-to-root
+    de_output: "data/poplar/de_results.csv"
+
+reference_species:
+  - name: "arabidopsis"
+    gene_id_prefixes: ["AT"]
+    orthofinder_column: "arab_genes"  # Column name in orthofinder_custom_file

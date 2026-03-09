@@ -1,0 +1,19 @@
+# Data files (large Excel/docs in project root)
+*.xlsx
+*.docx
+
+# Excel/Word temp files
+~$*
+
+# Pipeline output (generated)
+pipeline/output/
+
+# Pipeline intermediate data (generated)
+pipeline/data/*/de_results.csv
+
+# Claude project files
+.claude/
+
+# Python
+__pycache__/
+*.pyc
