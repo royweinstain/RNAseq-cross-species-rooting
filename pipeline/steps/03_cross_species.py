@@ -28,23 +28,25 @@ from utils import normalize_gene_id
 
 def load_and_map_de_results(config: dict, gene_map: dict, config_dir: str) -> pd.DataFrame:
     """
-    Load all species' de_results.csv files, normalize gene IDs,
+    Load all datasets' de_results.csv files, normalize gene IDs,
     join with gene_map to add orthogroup_id.
 
     Returns a combined DataFrame with columns:
       gene_id, normalized_gene_id, log2FC, pvalue, padj, mean_expr,
-      species, de_method, orthogroup_id, direction, is_significant
+      species, dataset_id, de_method, orthogroup_id, direction, is_significant
     """
     frames = []
     for sp in config["species"]:
+        dataset_id = sp.get("dataset_id", sp["name"])
         de_file = Path(config_dir) / sp["de_output"]
         if not de_file.exists():
             raise FileNotFoundError(
-                f"DE results not found for {sp['name']}: {de_file}\n"
+                f"DE results not found for {dataset_id}: {de_file}\n"
                 f"Run Step 1 first."
             )
         df = pd.read_csv(de_file)
         df["species"] = sp["name"]
+        df["dataset_id"] = dataset_id
         frames.append(df)
 
     if not frames:
@@ -77,19 +79,21 @@ def compute_conservation_scores(
     log2fc_threshold: float = 1.0,
 ) -> pd.DataFrame:
     """
-    Compute per-orthogroup conservation scores across species.
+    Compute per-orthogroup conservation scores across datasets.
 
     For each OG:
-      1. Per species: keep genes with padj < padj_threshold AND |log2FC| >= log2fc_threshold
-      2. Modal direction = whichever direction has more sig genes (ties -> skip species)
-      3. conservation_score = fraction of species (with >=1 sig gene) agreeing on modal direction
-      4. is_conserved = score >= conservation_threshold AND n_species_with_data >= min_species
+      1. Per dataset: keep genes with padj < padj_threshold AND |log2FC| >= log2fc_threshold
+      2. Modal direction = whichever direction has more sig genes (ties -> skip dataset)
+      3. conservation_score = fraction of datasets (with >=1 sig gene) agreeing on modal direction
+      4. is_conserved = score >= conservation_threshold AND n_datasets_with_data >= min_datasets
 
     Returns DataFrame with one row per orthogroup.
     """
-    min_species     = config["pipeline"]["min_species_for_conservation"]
+    # Support both old key name and new key name for backwards compatibility
+    min_datasets    = config["pipeline"].get("min_datasets_for_conservation",
+                        config["pipeline"].get("min_species_for_conservation", 2))
     cons_threshold  = config["pipeline"]["conservation_threshold"]
-    active_species  = [sp["name"] for sp in config["species"]]
+    active_datasets = [sp.get("dataset_id", sp["name"]) for sp in config["species"]]
 
     # Only work with genes that have orthogroup assignments
     df = combined_df.dropna(subset=["orthogroup_id"]).copy()
@@ -104,20 +108,20 @@ def compute_conservation_scores(
 
     for og_id, og_df in df.groupby("orthogroup_id"):
         row = {"orthogroup_id": og_id}
-        species_directions = []  # (species, modal_direction) for species with sig genes
+        dataset_directions = []  # modal_direction for datasets with sig genes
 
-        for sp in active_species:
-            sp_df     = og_df[og_df["species"] == sp]
-            n_total   = len(sp_df)
-            sig_df    = sp_df[sp_df["is_significant"]]
+        for did in active_datasets:
+            ds_df     = og_df[og_df["dataset_id"] == did]
+            n_total   = len(ds_df)
+            sig_df    = ds_df[ds_df["is_significant"]]
             n_sig     = len(sig_df)
 
-            row[f"{sp}_n_total"] = n_total
-            row[f"{sp}_n_sig"]   = n_sig
+            row[f"{did}_n_total"] = n_total
+            row[f"{did}_n_sig"]   = n_sig
 
             if n_sig == 0:
-                row[f"{sp}_direction"]   = None
-                row[f"{sp}_consistency"] = None
+                row[f"{did}_direction"]   = None
+                row[f"{did}_consistency"] = None
                 continue
 
             n_up_hard = (sig_df["direction"] == "up_in_hard").sum()
@@ -130,19 +134,19 @@ def compute_conservation_scores(
                 modal_dir   = "up_in_easy"
                 consistency = n_up_easy / n_sig
             else:
-                # Exact tie — skip this species for conservation vote
-                row[f"{sp}_direction"]   = "tie"
-                row[f"{sp}_consistency"] = 0.5
+                # Exact tie — skip this dataset for conservation vote
+                row[f"{did}_direction"]   = "tie"
+                row[f"{did}_consistency"] = 0.5
                 continue
 
-            row[f"{sp}_direction"]   = modal_dir
-            row[f"{sp}_consistency"] = consistency
-            species_directions.append(modal_dir)
+            row[f"{did}_direction"]   = modal_dir
+            row[f"{did}_consistency"] = consistency
+            dataset_directions.append(modal_dir)
 
-        n_species_with_data = len(species_directions)
-        row["n_species_with_data"] = n_species_with_data
+        n_datasets_with_data = len(dataset_directions)
+        row["n_datasets_with_data"] = n_datasets_with_data
 
-        if n_species_with_data < min_species:
+        if n_datasets_with_data < min_datasets:
             row["conservation_score"] = None
             row["modal_direction"]    = None
             row["is_conserved"]       = False
@@ -150,36 +154,36 @@ def compute_conservation_scores(
             continue
 
         # Majority vote
-        n_up_hard_species = sum(1 for d in species_directions if d == "up_in_hard")
-        n_up_easy_species = sum(1 for d in species_directions if d == "up_in_easy")
+        n_up_hard_ds = sum(1 for d in dataset_directions if d == "up_in_hard")
+        n_up_easy_ds = sum(1 for d in dataset_directions if d == "up_in_easy")
 
-        if n_up_hard_species > n_up_easy_species:
+        if n_up_hard_ds > n_up_easy_ds:
             modal_dir = "up_in_hard"
-            n_agree   = n_up_hard_species
-        elif n_up_easy_species > n_up_hard_species:
+            n_agree   = n_up_hard_ds
+        elif n_up_easy_ds > n_up_hard_ds:
             modal_dir = "up_in_easy"
-            n_agree   = n_up_easy_species
+            n_agree   = n_up_easy_ds
         else:
-            # Exact tie across species — mark as tied, not conserved
+            # Exact tie across datasets — mark as tied, not conserved
             row["conservation_score"] = 0.5
             row["modal_direction"]    = "tie"
             row["is_conserved"]       = False
             rows.append(row)
             continue
 
-        score = n_agree / n_species_with_data
+        score = n_agree / n_datasets_with_data
         row["conservation_score"] = score
         row["modal_direction"]    = modal_dir
         row["is_conserved"]       = (score >= cons_threshold and
-                                     n_species_with_data >= min_species)
+                                     n_datasets_with_data >= min_datasets)
         rows.append(row)
 
     result_df = pd.DataFrame(rows)
 
-    # Add per-species mean log2FC of significant genes for heatmap use
-    for sp in active_species:
-        sp_sig = df[(df["species"] == sp) & df["is_significant"]]
-        mean_fc = sp_sig.groupby("orthogroup_id")["log2FC"].mean().rename(f"{sp}_mean_log2fc")
+    # Add per-dataset mean log2FC of significant genes for heatmap use
+    for did in active_datasets:
+        ds_sig = df[(df["dataset_id"] == did) & df["is_significant"]]
+        mean_fc = ds_sig.groupby("orthogroup_id")["log2FC"].mean().rename(f"{did}_mean_log2fc")
         result_df = result_df.merge(mean_fc, on="orthogroup_id", how="left")
 
     return result_df
@@ -194,29 +198,31 @@ def run_cross_species(config: dict, gene_map: dict, output_dir: str, config_dir:
     mapped_genes   = combined["orthogroup_id"].notna().sum()
     mapping_rate   = mapped_genes / total_genes * 100 if total_genes > 0 else 0
 
-    print(f"  Total genes (all species): {total_genes}")
-    print(f"  Mapped to orthogroups    : {mapped_genes} ({mapping_rate:.1f}%)")
+    print(f"  Total genes (all datasets): {total_genes}")
+    print(f"  Mapped to orthogroups     : {mapped_genes} ({mapping_rate:.1f}%)")
 
     for sp in config["species"]:
-        sp_df   = combined[combined["species"] == sp["name"]]
-        sp_map  = sp_df["orthogroup_id"].notna().sum()
-        sp_rate = sp_map / len(sp_df) * 100 if len(sp_df) > 0 else 0
-        print(f"  {sp['name']}: {sp_map}/{len(sp_df)} genes mapped ({sp_rate:.1f}%)")
+        dataset_id = sp.get("dataset_id", sp["name"])
+        ds_df   = combined[combined["dataset_id"] == dataset_id]
+        ds_map  = ds_df["orthogroup_id"].notna().sum()
+        ds_rate = ds_map / len(ds_df) * 100 if len(ds_df) > 0 else 0
+        print(f"  {dataset_id}: {ds_map}/{len(ds_df)} genes mapped ({ds_rate:.1f}%)")
 
     print("\n[Step 3] Computing conservation scores...")
     padj_thresh   = config["pipeline"].get("padj_threshold", 0.05)
     log2fc_thresh = config["pipeline"].get("log2fc_threshold", 1.0)
     results_df = compute_conservation_scores(combined, config, padj_thresh, log2fc_thresh)
 
-    min_sp    = config["pipeline"]["min_species_for_conservation"]
+    min_ds    = config["pipeline"].get("min_datasets_for_conservation",
+                  config["pipeline"].get("min_species_for_conservation", 2))
     threshold = config["pipeline"]["conservation_threshold"]
 
-    ogs_with_data = results_df[results_df["n_species_with_data"] >= min_sp]
+    ogs_with_data = results_df[results_df["n_datasets_with_data"] >= min_ds]
     conserved     = results_df[results_df["is_conserved"] == True]
 
-    print(f"  Total OGs evaluated           : {len(results_df)}")
-    print(f"  OGs with data in >= {min_sp} species : {len(ogs_with_data)}")
-    print(f"  Conserved OGs (score >= {threshold}): {len(conserved)}")
+    print(f"  Total OGs evaluated              : {len(results_df)}")
+    print(f"  OGs with data in >= {min_ds} datasets : {len(ogs_with_data)}")
+    print(f"  Conserved OGs (score >= {threshold}) : {len(conserved)}")
 
     if len(conserved) > 0:
         up_hard = (conserved["modal_direction"] == "up_in_hard").sum()

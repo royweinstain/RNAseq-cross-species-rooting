@@ -15,12 +15,15 @@ def normalize_gene_id(gene_id: str) -> str:
       Potri.001G000400.0                 -> Potri.001G000400 (Poplar .0 suffix)
       Potri.001G000100.1|PACid_27040687  -> Potri.001G000100 (Poplar OrthoFinder format)
       XLOC_042640_1                      -> XLOC_042640      (Argan _N suffix from OrthoFinder)
+      g19068.t1                          -> g19068           (Argan .tN transcript suffix)
 
     Safe for XLOC_000001 because the trailing segment is 6 digits (>3), not matched.
     """
     gid = str(gene_id).strip()
     # Strip |PACid_... suffix (OrthoFinder poplar format: Potri.001G000100.1|PACid_27040687)
     gid = gid.split('|')[0]
+    # Strip .tN transcript suffix (e.g. g19068.t1 -> g19068, common in MAKER/Augustus annotations)
+    gid = re.sub(r'\.t\d+$', '', gid)
     # Strip dot-version suffix first (e.g. .1, .2, .10)
     gid = re.sub(r'\.\d{1,3}$', '', gid)
     # Strip underscore-isoform suffix only if 1-3 digits (avoids touching XLOC_000001)

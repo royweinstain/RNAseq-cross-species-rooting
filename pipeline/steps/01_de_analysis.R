@@ -138,6 +138,7 @@ run_limma_log2 <- function(expr_mat, easy_cols, hard_cols, species_name) {
 
 run_limma_voom <- function(expr_mat, easy_cols, hard_cols, species_name) {
   message("  Running limma-voom for ", species_name)
+  message("  NOTE: limma-voom expects raw values (FPKM/TPM); they will be log2-transformed internally.")
 
   mat <- expr_mat[, c(easy_cols, hard_cols), drop = FALSE]
 
@@ -184,7 +185,8 @@ run_limma_voom <- function(expr_mat, easy_cols, hard_cols, species_name) {
 
 
 process_species <- function(sp, config_dir) {
-  name         <- sp$name
+  dataset_id   <- if (!is.null(sp$dataset_id)) sp$dataset_id else sp$name
+  species_name <- sp$name
   expr_file    <- file.path(config_dir, sp$expression_file)
   id_col       <- sp$gene_id_column
   easy_cols    <- sp$samples$easy
@@ -192,7 +194,7 @@ process_species <- function(sp, config_dir) {
   de_output    <- file.path(config_dir, sp$de_output)
   fmt          <- if (is.null(sp$data_format)) "auto" else sp$data_format
 
-  message("\n[", name, "] Reading expression file: ", expr_file)
+  message("\n[", dataset_id, "] Reading expression file: ", expr_file)
   if (!file.exists(expr_file)) stop("Expression file not found: ", expr_file)
 
   ext <- tolower(tools::file_ext(expr_file))
@@ -237,14 +239,17 @@ process_species <- function(sp, config_dir) {
 
   # Run appropriate DE method
   if (fmt == "counts") {
-    de_df <- run_deseq2(mat, easy_cols, hard_cols, name)
+    de_df <- run_deseq2(mat, easy_cols, hard_cols, dataset_id)
   } else if (fmt == "log2fpkm") {
     # Already log2-transformed: use plain limma (no voom — voom would re-transform)
-    de_df <- run_limma_log2(mat, easy_cols, hard_cols, name)
+    de_df <- run_limma_log2(mat, easy_cols, hard_cols, dataset_id)
   } else {
     # tpm or fpkm: use limma-voom
-    de_df <- run_limma_voom(mat, easy_cols, hard_cols, name)
+    de_df <- run_limma_voom(mat, easy_cols, hard_cols, dataset_id)
   }
+
+  # Add dataset_id column (species column already set by DE function)
+  de_df$dataset_id <- dataset_id
 
   # Write output
   out_dir <- dirname(de_output)
@@ -268,22 +273,38 @@ config_dir <- dirname(normalizePath(config_file))
 
 config <- yaml.load_file(config_file)
 
-# Optional --species filter
+# Optional --species or --dataset filter
 species_filter <- NULL
+dataset_filter <- NULL
+if ("--dataset" %in% args) {
+  idx <- which(args == "--dataset")
+  if (idx < length(args)) dataset_filter <- args[idx + 1]
+}
 if ("--species" %in% args) {
   idx <- which(args == "--species")
   if (idx < length(args)) species_filter <- args[idx + 1]
 }
 
 species_list <- config$species
-if (!is.null(species_filter)) {
+if (!is.null(dataset_filter)) {
+  species_list <- Filter(function(s) {
+    did <- s$dataset_id
+    if (is.null(did)) did <- s$name
+    did == dataset_filter
+  }, species_list)
+  if (length(species_list) == 0)
+    stop("Dataset '", dataset_filter, "' not found in config.")
+  message("Running DE for dataset: ", dataset_filter)
+} else if (!is.null(species_filter)) {
   species_list <- Filter(function(s) s$name == species_filter, species_list)
   if (length(species_list) == 0)
     stop("Species '", species_filter, "' not found in config.")
   message("Running DE for species: ", species_filter)
 } else {
-  message("Running DE for all species: ",
-          paste(sapply(species_list, `[[`, "name"), collapse=", "))
+  message("Running DE for all datasets: ",
+          paste(sapply(species_list, function(s) {
+            if (!is.null(s$dataset_id)) s$dataset_id else s$name
+          }), collapse=", "))
 }
 
 for (sp in species_list) {

@@ -47,10 +47,10 @@ def _load_step(filename: str):
 
 REQUIRED_PIPELINE_KEYS = [
     "run_name", "orthofinder_results", "output_dir",
-    "min_species_for_conservation", "conservation_threshold",
+    "conservation_threshold",
 ]
 REQUIRED_SPECIES_KEYS = [
-    "name", "display_name", "expression_file",
+    "name", "dataset_id", "display_name", "expression_file",
     "gene_id_column", "gene_id_prefixes", "orthofinder_column",
     "samples", "de_output",
 ]
@@ -67,26 +67,39 @@ def validate_config(config: dict, config_dir: str) -> list:
         if key not in config["pipeline"]:
             errors.append(f"pipeline.{key} is missing.")
 
+    # Need at least one of the min_datasets/min_species keys
+    if ("min_datasets_for_conservation" not in config["pipeline"] and
+        "min_species_for_conservation" not in config["pipeline"]):
+        errors.append("pipeline must have min_datasets_for_conservation (or min_species_for_conservation).")
+
     if "species" not in config or not config["species"]:
         errors.append("No species defined under 'species'.")
         return errors
 
+    dataset_ids_seen = set()
     for sp in config["species"]:
-        name = sp.get("name", "<unnamed>")
+        label = sp.get("dataset_id", sp.get("name", "<unnamed>"))
         for key in REQUIRED_SPECIES_KEYS:
             if key not in sp:
-                errors.append(f"species '{name}': missing key '{key}'.")
+                errors.append(f"dataset '{label}': missing key '{key}'.")
+
+        # Check dataset_id uniqueness
+        did = sp.get("dataset_id")
+        if did:
+            if did in dataset_ids_seen:
+                errors.append(f"Duplicate dataset_id: '{did}'")
+            dataset_ids_seen.add(did)
 
         if "samples" in sp:
             if not sp["samples"].get("easy"):
-                errors.append(f"species '{name}': samples.easy is empty.")
+                errors.append(f"dataset '{label}': samples.easy is empty.")
             if not sp["samples"].get("hard"):
-                errors.append(f"species '{name}': samples.hard is empty.")
+                errors.append(f"dataset '{label}': samples.hard is empty.")
 
         if "expression_file" in sp:
             expr_path = Path(config_dir) / sp["expression_file"]
             if not expr_path.exists():
-                errors.append(f"species '{name}': expression_file not found: {expr_path}")
+                errors.append(f"dataset '{label}': expression_file not found: {expr_path}")
 
     # Check OrthoFinder source — either custom file or results dir must be set
     custom_file = config["pipeline"].get("orthofinder_custom_file")
@@ -133,15 +146,17 @@ def _find_rscript() -> str:
     )
 
 
-def run_step1(config: dict, config_file: str, species_filter):
+def run_step1(config: dict, config_file: str, species_filter, dataset_filter=None):
     print("\n" + "=" * 60)
-    print("STEP 1: Per-species differential expression (R)")
+    print("STEP 1: Per-dataset differential expression (R)")
     print("=" * 60)
 
     rscript  = _find_rscript()
     r_script = STEPS_DIR / "01_de_analysis.R"
     cmd = [rscript, str(r_script), config_file]
-    if species_filter:
+    if dataset_filter:
+        cmd += ["--dataset", dataset_filter]
+    elif species_filter:
         cmd += ["--species", species_filter]
 
     print(f"Running: {' '.join(cmd)}")
@@ -151,13 +166,15 @@ def run_step1(config: dict, config_file: str, species_filter):
 
     # Validate outputs
     config_dir = str(Path(config_file).parent)
-    species_to_check = config["species"]
-    if species_filter:
-        species_to_check = [s for s in species_to_check if s["name"] == species_filter]
+    datasets_to_check = config["species"]
+    if dataset_filter:
+        datasets_to_check = [s for s in datasets_to_check if s.get("dataset_id") == dataset_filter]
+    elif species_filter:
+        datasets_to_check = [s for s in datasets_to_check if s["name"] == species_filter]
 
     missing = [
         str(Path(config_dir) / sp["de_output"])
-        for sp in species_to_check
+        for sp in datasets_to_check
         if not (Path(config_dir) / sp["de_output"]).exists()
     ]
     if missing:
@@ -231,6 +248,8 @@ def main():
                         help="Comma-separated steps to run (default: 1,2,3,4,5)")
     parser.add_argument("--species", default=None,
                         help="Run Step 1 for one species only (by name)")
+    parser.add_argument("--dataset", default=None,
+                        help="Run Step 1 for one dataset only (by dataset_id)")
     parser.add_argument("--output-dir", default=None,
                         help="Override output directory")
     args = parser.parse_args()
@@ -254,9 +273,9 @@ def main():
                 print(f"  - {e}")
             sys.exit(1)
         print("Config is valid.")
-        print(f"  Run name : {config['pipeline']['run_name']}")
-        print(f"  Species  : {[s['name'] for s in config['species']]}")
-        print(f"  Steps    : {args.steps}")
+        print(f"  Run name  : {config['pipeline']['run_name']}")
+        print(f"  Datasets  : {[s['dataset_id'] for s in config['species']]}")
+        print(f"  Steps     : {args.steps}")
         sys.exit(0)
 
     if errors:
@@ -285,14 +304,16 @@ def main():
     print(f"\nOutput directory : {output_dir}")
     print(f"Run name         : {config['pipeline']['run_name']}")
     print(f"Steps            : {steps}")
-    if args.species:
+    if args.dataset:
+        print(f"Dataset filter   : {args.dataset}")
+    elif args.species:
         print(f"Species filter   : {args.species}")
 
     gene_map = {}
 
     try:
         if 1 in steps:
-            run_step1(config, config_file, args.species)
+            run_step1(config, config_file, args.species, args.dataset)
 
         if 2 in steps:
             gene_map, _ = run_step2(config, output_dir, config_dir)

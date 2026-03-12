@@ -1,47 +1,62 @@
 pipeline:
-  run_name: "argan_poplar_v1"
+  run_name: "argan_poplar_v2"
   # Standard OrthoFinder results dir (used when running all species together on HPC)
   # Set to null if using orthofinder_custom_file instead
   orthofinder_results: null
-  # Custom OrthoFinder TSV (3 columns: Orthogroup / poplar_genes / argan_genes)
-  # Direct pairwise poplar-argan OrthoFinder run — links both expression species.
-  orthofinder_custom_file: "orthogroups/Orthogroups.csv"
+  # Custom OrthoFinder TSV (columns: Orthogroup / arabidopsis / argan / poplar)
+  # 3-species OrthoFinder run with chromosome-level argan genome (2025).
+  orthofinder_custom_file: "orthogroups/Orthogroups_v2.tsv"
   output_dir: "output"
-  min_species_for_conservation: 2      # Min species an OG must appear in
-  conservation_threshold: 0.80         # Fraction of species that must agree on direction
-  padj_threshold: 0.05                 # Significance cutoff for DE genes
-  log2fc_threshold: 1.0                # Minimum |log2FC| for DE genes
+  min_datasets_for_conservation: 2   # Min datasets an OG must appear in
+  conservation_threshold: 0.80       # Fraction of datasets that must agree on direction
+  padj_threshold: 0.05               # Significance cutoff for DE genes
+  log2fc_threshold: 1.0              # Minimum |log2FC| for DE genes
 
 species:
   - name: "argan"
+    dataset_id: "argan_196_vs_YM3"
     display_name: "Argan (Argania spinosa)"
-    expression_file: "../20230306 argan RNAseq full.xlsx"
-    expression_sheet: "fpkm"          # Excel sheet name
-    header_row: 1                     # Row number (1-based) of the column headers
-    gene_id_column: "ID"
-    gene_id_prefixes: ["XLOC_"]       # Used to match genes in OrthoFinder file
-    orthofinder_column: "argan_genes" # Column name in orthofinder_custom_file
-    data_format: "fpkm"               # Confirmed: FPKM values in the 'fpkm' sheet
+    expression_file: "datasets/argan_196_vs_YM3/processed/argan_counts.csv"
+    gene_id_column: "gene_id"
+    gene_id_prefixes: ["g"]           # New genome gene IDs: g1, g2, ...
+    orthofinder_column: "argan"       # Column name in Orthogroups_v2.tsv
+    data_format: "counts"             # Raw counts from featureCounts → DESeq2
     samples:
       easy: ["YM3-T0-1", "YM3-T0-2", "YM3-T0-3"]   # YM3 = easy-to-root
       hard: ["196-T0-1", "196-T0-2", "196-T0-3"]    # 196  = hard-to-root
-    de_output: "data/argan/de_results.csv"
+    de_output: "datasets/argan_196_vs_YM3/processed/de_results.csv"
 
   - name: "poplar"
+    dataset_id: "poplar_OP42_vs_T89"
     display_name: "Poplar (Populus trichocarpa)"
-    expression_file: "../20230807 poplar.xlsx"
+    expression_file: "datasets/poplar_OP42_vs_T89/raw/20230807 poplar.xlsx"
     expression_sheet: "Sheet 1 Raw data"
     header_row: 2                     # Row 1 is a description line; headers are on row 2
     gene_id_column: "Genes"
     gene_id_prefixes: ["Potri."]
-    orthofinder_column: "poplar_genes"  # placeholder — OrthoFinder file not yet available
+    orthofinder_column: "poplar"
     data_format: "log2fpkm"           # Values range 0–14.5: confirmed log2-transformed FPKM
     samples:
       easy: ["OP42-1 (T0)", "OP42-2 (T0)", "OP42-3 (T0)"]      # OP42 = easy-to-root
       hard: ["T89-1 (T0)", "T89-2(T0)", "T89-3(T0)"]           # T89  = hard-to-root
-    de_output: "data/poplar/de_results.csv"
+    de_output: "datasets/poplar_OP42_vs_T89/processed/de_results.csv"
+
+  - name: "poplar"
+    dataset_id: "poplar_G_vs_B"
+    display_name: "Populus (Danhong x Tongliao1 F1)"
+    expression_file: "datasets/poplar_G_vs_B/raw/20230823 poplus different lines.xlsx"
+    expression_sheet: "Sheet 1"
+    header_row: 2
+    gene_id_column: "Gene ID"
+    gene_id_prefixes: ["Potri."]
+    orthofinder_column: "poplar"
+    data_format: "fpkm"
+    samples:
+      easy: ["G1_1", "G1_2", "G1_3", "G2_1", "G2_2", "G2_3", "G3_1", "G3_2", "G3_3"]
+      hard: ["B1_1", "B1_2", "B1_3", "B2_1", "B2_2", "B2_3", "B3_1", "B3_2", "B3_3"]
+    de_output: "datasets/poplar_G_vs_B/processed/de_results.csv"
 
 reference_species:
   - name: "arabidopsis"
     gene_id_prefixes: ["AT"]
-    orthofinder_column: "arab_genes"  # Column name in orthofinder_custom_file
+    orthofinder_column: "arabidopsis"  # Column name in Orthogroups_v2.tsv

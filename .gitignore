@@ -1,15 +1,30 @@
 # Data files (large Excel/docs in project root)
 *.xlsx
 *.docx
+*.csv
 
 # Excel/Word temp files
 ~$*
 
-# Pipeline output (generated)
+# Pipeline output (generated, except methods section)
 pipeline/output/
 
 # Pipeline intermediate data (generated)
 pipeline/data/*/de_results.csv
+
+# Large data directories (downloadable from public databases)
+pipeline/datasets/
+pipeline/reference_genomes/
+pipeline/orthogroups/proteomes/
+reference_genomes/
+
+# Large binary files
+*.fa
+*.fa.gz
+*.faa
+*.gtf
+*.bam
+*.sam
 
 # Claude project files
 .claude/
@@ -17,3 +32,7 @@ pipeline/data/*/de_results.csv
 # Python
 __pycache__/
 *.pyc
+
+# OS files
+Thumbs.db
+.DS_Store

@@ -183,14 +183,15 @@ def plot_direction_agreement(conserved_df: pd.DataFrame, active_species: list, o
 
 
 def plot_summary_stats(results_df: pd.DataFrame, all_ogs: int,
-                       min_species: int, output_dir: Path):
+                       min_datasets: int, output_dir: Path):
     """Funnel bar chart: total OGs -> OGs with data -> conserved."""
-    ogs_with_data = (results_df["n_species_with_data"] >= min_species).sum()
+    n_data_col = "n_datasets_with_data" if "n_datasets_with_data" in results_df.columns else "n_species_with_data"
+    ogs_with_data = (results_df[n_data_col] >= min_datasets).sum()
     conserved     = results_df["is_conserved"].sum()
 
     labels = [
         f"Total OGs\n({all_ogs})",
-        f"OGs with data\nin ≥{min_species} species\n({ogs_with_data})",
+        f"OGs with data\nin ≥{min_datasets} datasets\n({ogs_with_data})",
         f"Conserved OGs\n({conserved})",
     ]
     values = [all_ogs, ogs_with_data, conserved]
@@ -223,10 +224,12 @@ def _file_checksum(path: Path) -> str:
 def write_run_report(config: dict, output_dir: Path, results_df: pd.DataFrame,
                      de_stats: dict):
     """Write a plain-text run report."""
-    min_species = config["pipeline"]["min_species_for_conservation"]
-    threshold   = config["pipeline"]["conservation_threshold"]
+    min_datasets = config["pipeline"].get("min_datasets_for_conservation",
+                     config["pipeline"].get("min_species_for_conservation", 2))
+    threshold    = config["pipeline"]["conservation_threshold"]
 
-    ogs_with_data = (results_df["n_species_with_data"] >= min_species).sum() if len(results_df) else 0
+    n_data_col = "n_datasets_with_data" if "n_datasets_with_data" in results_df.columns else "n_species_with_data"
+    ogs_with_data = (results_df[n_data_col] >= min_datasets).sum() if len(results_df) else 0
     conserved     = results_df["is_conserved"].sum() if len(results_df) else 0
     total_ogs     = len(results_df)
 
@@ -240,26 +243,27 @@ def write_run_report(config: dict, output_dir: Path, results_df: pd.DataFrame,
         "",
         "--- Config Snapshot ---",
         f"  OrthoFinder results : {config['pipeline']['orthofinder_results']}",
-        f"  Min species         : {min_species}",
+        f"  Min datasets        : {min_datasets}",
         f"  Conservation thresh : {threshold}",
         f"  padj threshold      : {config['pipeline'].get('padj_threshold', 0.05)}",
         f"  |log2FC| threshold  : {config['pipeline'].get('log2fc_threshold', 1.0)}",
         "",
-        "--- Species ---",
+        "--- Datasets ---",
     ]
 
     for sp in config["species"]:
-        report_lines.append(f"  {sp['name']}: {sp['display_name']}")
+        dataset_id = sp.get("dataset_id", sp["name"])
+        report_lines.append(f"  {dataset_id}: {sp['display_name']}")
         report_lines.append(f"    expression file: {sp['expression_file']}")
         report_lines.append(f"    easy samples   : {sp['samples']['easy']}")
         report_lines.append(f"    hard samples   : {sp['samples']['hard']}")
 
     report_lines += [
         "",
-        "--- DE Statistics (per species) ---",
+        "--- DE Statistics (per dataset) ---",
     ]
-    for sp_name, stats in de_stats.items():
-        report_lines.append(f"  {sp_name}:")
+    for ds_id, stats in de_stats.items():
+        report_lines.append(f"  {ds_id}:")
         report_lines.append(f"    n tested   : {stats.get('n_tested', 'N/A')}")
         padj_t = config['pipeline'].get('padj_threshold', 0.05)
         log2fc_t = config['pipeline'].get('log2fc_threshold', 1.0)
@@ -271,7 +275,7 @@ def write_run_report(config: dict, output_dir: Path, results_df: pd.DataFrame,
         "",
         "--- Orthogroup Conservation ---",
         f"  Total OGs evaluated       : {total_ogs}",
-        f"  OGs with data (>={min_species} sp)  : {ogs_with_data}",
+        f"  OGs with data (>={min_datasets} ds)  : {ogs_with_data}",
         f"  Conserved OGs             : {conserved}",
         "",
         "--- Output Files ---",
@@ -305,9 +309,10 @@ def run_report(config: dict, output_dir: str, config_dir: str):
     figures_dir = out_path / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    active_species = config["species"]
-    species_names  = [sp["name"] for sp in active_species]
-    min_species    = config["pipeline"]["min_species_for_conservation"]
+    all_datasets   = config["species"]
+    dataset_ids    = [sp.get("dataset_id", sp["name"]) for sp in all_datasets]
+    min_datasets   = config["pipeline"].get("min_datasets_for_conservation",
+                       config["pipeline"].get("min_species_for_conservation", 2))
     threshold      = config["pipeline"]["conservation_threshold"]
 
     print("\n[Step 4] Generating figures and report...")
@@ -325,20 +330,21 @@ def run_report(config: dict, output_dir: str, config_dir: str):
     padj_threshold  = config["pipeline"].get("padj_threshold", 0.05)
     log2fc_threshold = config["pipeline"].get("log2fc_threshold", 1.0)
 
-    # --- Per-species volcano plots ---
-    for sp in active_species:
+    # --- Per-dataset volcano plots ---
+    for sp in all_datasets:
+        dataset_id = sp.get("dataset_id", sp["name"])
         de_file = Path(config_dir) / sp["de_output"]
         if not de_file.exists():
-            print(f"  Skipping volcano for {sp['name']} (DE file missing)")
+            print(f"  Skipping volcano for {dataset_id} (DE file missing)")
             continue
         de_df = pd.read_csv(de_file)
-        plot_volcano(de_df, sp["name"], sp["display_name"], figures_dir,
+        plot_volcano(de_df, dataset_id, sp["display_name"], figures_dir,
                      padj_threshold=padj_threshold, log2fc_threshold=log2fc_threshold)
 
         n_tested = len(de_df)
         n_sig    = ((de_df["padj"] < padj_threshold) & (de_df["log2FC"].abs() >= log2fc_threshold)).sum()
         method   = de_df["de_method"].iloc[0] if "de_method" in de_df.columns else "unknown"
-        de_stats[sp["name"]] = {
+        de_stats[dataset_id] = {
             "n_tested": n_tested,
             "n_sig": n_sig,
             "method": method,
@@ -351,14 +357,13 @@ def run_report(config: dict, output_dir: str, config_dir: str):
 
     # --- Top conserved heatmap ---
     if not conserved_df.empty:
-        plot_top_conserved_heatmap(conserved_df, species_names, figures_dir, top_n=20)
-        plot_direction_agreement(conserved_df, species_names, figures_dir)
+        plot_top_conserved_heatmap(conserved_df, dataset_ids, figures_dir, top_n=20)
+        plot_direction_agreement(conserved_df, dataset_ids, figures_dir)
 
     # --- Summary stats ---
     if not results_df.empty:
-        og_gene_map_file = out_path / "orthogroup_gene_map.csv"
         all_ogs = len(results_df)
-        plot_summary_stats(results_df, all_ogs, min_species, figures_dir)
+        plot_summary_stats(results_df, all_ogs, min_datasets, figures_dir)
 
     # --- Run report ---
     write_run_report(config, out_path, results_df, de_stats)
