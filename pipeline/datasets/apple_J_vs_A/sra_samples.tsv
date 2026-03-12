@@ -1,0 +1,7 @@
+SRA_Run	Sample_Name	Phase	Timepoint	Replicate	Description
+SRR15322003	J_0_rep1	Juvenile	T0	1	Mx-J basal sucker cutting, no treatment
+SRR15322002	J_0_rep2	Juvenile	T0	2	Mx-J basal sucker cutting, no treatment
+SRR15322030	J_0_rep3	Juvenile	T0	3	Mx-J basal sucker cutting, no treatment
+SRR15494548	A_0_rep1	Adult	T0	1	Mx-A canopy shoot cutting, no treatment
+SRR15494559	A_0_rep2	Adult	T0	2	Mx-A canopy shoot cutting, no treatment
+SRR15494546	A_0_rep3	Adult	T0	3	Mx-A canopy shoot cutting, no treatment
