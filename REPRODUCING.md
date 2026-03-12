@@ -20,6 +20,30 @@ python run_pipeline.py config.yaml --steps 2,3,4,5
 
 This uses the DE results already in `pipeline/datasets/*/processed/de_results.csv` and the orthogroup table in `pipeline/orthogroups/Orthogroups_v2.tsv`.
 
+## Setting Up from the Shared Lab Folder
+
+If you received the full project folder (e.g., via OneDrive or a shared drive), everything is already in place — skip to "Quick Start" above or "Full Reproduction" below.
+
+If you cloned from GitHub instead, the large files are not included in the repo. Ask your supervisor for access to the shared folder and copy the following into the corresponding locations:
+
+```
+# Raw FASTQ reads (~23 GB) — only needed to re-run alignment from scratch
+pipeline/datasets/argan_196_vs_YM3/raw/fastq/     ← 12 .fastq.gz files
+
+# BAM files (~2 GB) — only needed to re-run featureCounts
+pipeline/datasets/argan_196_vs_YM3/raw/bam/        ← 6 .bam + .bam.bai + .log files
+
+# Reference genomes (~1.9 GB) — only needed for alignment or OrthoFinder
+pipeline/reference_genomes/argan/                   ← Sspinosum_hap1_genome.fa, .gtf, .faa
+pipeline/reference_genomes/arabidopsis/             ← TAIR10 protein FASTA
+pipeline/reference_genomes/poplar/                  ← P. trichocarpa protein FASTA
+
+# Proteome FASTAs for OrthoFinder (~67 MB) — only needed to re-run OrthoFinder
+pipeline/orthogroups/proteomes/                     ← arabidopsis.fa, argan.fa, poplar.fa
+```
+
+None of these are needed for the quick-start path (steps 2–5). The expression data, DE results, and orthogroup table are all included in the GitHub repo.
+
 ## Full Reproduction (all steps)
 
 ### Prerequisites
