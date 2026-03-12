@@ -31,16 +31,25 @@ python run_pipeline.py config.yaml --dry-run     # preview only
 python run_pipeline.py config.yaml --steps 2,3,4 # skip R step
 ```
 
-## Data Not Included
+## Reproducing the Analysis
 
-The following data must be obtained separately (too large for git):
+All expression data, DE results, and orthogroup tables needed to reproduce steps 2–5 are included in this repository. See **[REPRODUCING.md](REPRODUCING.md)** for detailed instructions.
 
-- **Raw reads**: Download from NCBI SRA (BioProject PRJNA863910) using `scripts/download_t0_samples.sh`
-- **Reference genome**: *S. spinosum* chromosome-level assembly from ENA (PRJEB88017)
-- **Proteomes**: Download from Ensembl Plants (Arabidopsis TAIR10, *P. trichocarpa* v3.x) and ENA (*S. spinosum*)
-- **Poplar expression data**: Supplementary tables from Ranjan et al. (2022) and Sun et al. (2019)
+**Quick start:**
+```bash
+pip install -r requirements.txt
+Rscript install_r_packages.R
+cd pipeline/
+python run_pipeline.py config.yaml --steps 2,3,4,5
+```
 
-See `pipeline/scripts/` for download and processing helper scripts.
+### Data not included (too large for git)
+
+- **Raw reads**: NCBI SRA BioProject PRJNA863910 (use `scripts/download_t0_samples.sh`)
+- **Reference genome**: *S. spinosum* chromosome-level assembly, ENA PRJEB88017
+- **Proteomes**: Ensembl Plants (Arabidopsis TAIR10, *P. trichocarpa* v3.x) and ENA (*S. spinosum*)
+
+These are only needed if re-running read alignment or OrthoFinder from scratch.
 
 ## WSL Scripts (`pipeline/scripts/`)
 
